@@ -23,8 +23,11 @@ def main():
     with torch.inference_mode():
         scores = q @ k.T / math.sqrt(q.shape[-1])
         future = torch.ones(3, 3, dtype=torch.bool).triu(1)
+        print(future)
         masked_scores = scores.masked_fill(future, float('-inf'))
         probs = masked_scores.softmax(dim=-1)
+        print('probs:')
+        print(probs)
         output = probs @ v
         for name, value in [('scores', scores), ('future (True = blocked)', future),
                             ('masked_scores', masked_scores), ('probs', probs),
@@ -45,6 +48,21 @@ def main():
         wrong_probs = (scores + visible).softmax(dim=-1)
         print('wrong mask: probability on future positions in row 0')
         print(wrong_probs[0, 1:].sum().item())
+        print(wrong_probs)
+
+        # The correct additive form: blocked positions get -inf, visible ones
+        # get any per-row constant. Here it is +1 rather than 0: softmax
+        # subtracts the row maximum, so a uniform shift among the visible keys
+        # cancels and this path still equals the masked_fill result above. Only
+        # the -inf on blocked positions matters.
+        additive_mask = torch.ones_like(scores)
+        additive_mask[future] = float('-inf')
+        print(additive_mask)
+        correct_probs = (scores + additive_mask).softmax(dim=-1)
+        print('correct mask: probability on future positions in row 0')
+        print(correct_probs[0, 1:].sum().item())
+        torch.testing.assert_close(correct_probs, probs)
+        print(correct_probs)
 
 
 if __name__ == '__main__':
